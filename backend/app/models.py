@@ -9,6 +9,7 @@ from sqlalchemy import (
     Time,
     Boolean,
     Float,
+    JSON
 )
 from sqlalchemy.orm import relationship
 from app.database import Base
@@ -47,8 +48,8 @@ class RefreshToken(Base):
 class Profile(Base):
     __tablename__ = "profiles"
 
-    id = Column(String(24), primary_key=True, default=generate_oid, unique=True, index=True)
-    user_id = Column(String(24), ForeignKey("users.id"), nullable=False)
+    id = Column(String, primary_key=True, default=lambda: str(ObjectId()), index=True)
+    user_id = Column(String, ForeignKey("users.id"), nullable=False)
 
     full_name = Column(String, nullable=False)
     gender = Column(String(10))
@@ -58,6 +59,9 @@ class Profile(Base):
     birth_lat = Column(Float)
     birth_lon = Column(Float)
     birth_tz = Column(Float)
-    created_at = Column(TIMESTAMP, server_default=func.now())
+
+    # New fields for Divine API results
+    planetary_positions = Column(JSON, nullable=True)
+    dasha_details = Column(JSON, nullable=True)
 
     owner = relationship("User", back_populates="profiles")

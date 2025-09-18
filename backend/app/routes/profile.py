@@ -10,6 +10,8 @@ from app.database import SessionLocal
 from app.models import User, Profile
 from app.utils.jwt_handler import verify_access_token
 from app.config import GOOGLE_MAPS_API_KEY
+from app.utils.divine_api import fetch_divine_data
+
 
 router = APIRouter()
 
@@ -57,7 +59,7 @@ class ProfileRequest(BaseModel):
 # ---------------------
 
 @router.post("/profiles")
-def create_profile(
+async def create_profile(
     data: ProfileRequest,
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
@@ -76,8 +78,15 @@ def create_profile(
     db.add(profile)
     db.commit()
     db.refresh(profile)
-    return profile
 
+    # 🔮 Fetch Divine data and update profile
+    divine_data = await fetch_divine_data(profile)
+    profile.planetary_positions = divine_data["planetary_positions"]
+    profile.dasha_details = divine_data["dasha_details"]
+    db.commit()
+    db.refresh(profile)
+
+    return profile
 
 @router.get("/profiles")
 def list_profiles(
@@ -103,28 +112,34 @@ def get_profile(
 
 
 @router.patch("/profiles/{profile_id}")
-def patch_profile(
+async def patch_profile(
     profile_id: str,
     data: ProfileRequest,
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
-    profile = (
-        db.query(Profile)
-        .filter(Profile.id == profile_id, Profile.user_id == current_user.id)
-        .first()
-    )
+    profile = db.query(Profile).filter(
+        Profile.id == profile_id, Profile.user_id == current_user.id
+    ).first()
     if not profile:
         raise HTTPException(status_code=404, detail="Profile not found")
 
+    # Apply only provided fields
     update_data = data.dict(exclude_unset=True)
     for field, value in update_data.items():
         setattr(profile, field, value)
 
     db.commit()
     db.refresh(profile)
-    return profile
 
+    # 🔮 Re-fetch Divine data after update
+    divine_data = await fetch_divine_data(profile)
+    profile.planetary_positions = divine_data["planetary_positions"]
+    profile.dasha_details = divine_data["dasha_details"]
+    db.commit()
+    db.refresh(profile)
+
+    return profile
 
 @router.delete("/profiles/{profile_id}")
 def delete_profile(

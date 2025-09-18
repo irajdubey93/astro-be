@@ -7,4 +7,4 @@ Base.metadata.create_all(bind=engine)
 app = FastAPI(title="Astro App Backend")
 
 app.include_router(auth.router, prefix="/auth", tags=["Auth"])
-app.include_router(profile.router, tags=["Profile"])
+app.include_router(profile.router, prefix="", tags=["Profiles"])

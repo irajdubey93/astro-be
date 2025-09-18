@@ -210,3 +210,29 @@ async def select_location(
             "lon": lon,
             "timezone": tz_data.get("rawOffset", 0) / 3600,
         }
+    
+@router.post("/profiles/{profile_id}/refresh-astro-data")
+async def refresh_astro_data(
+    profile_id: str,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    profile = db.query(Profile).filter(
+        Profile.id == profile_id, 
+        Profile.user_id == current_user.id
+    ).first()
+
+    if not profile:
+        raise HTTPException(status_code=404, detail="Profile not found")
+
+    # 🔮 Fetch fresh Divine data
+    divine_data = await fetch_divine_data(profile)
+
+    # Save actual JSON
+    profile.planetary_positions = divine_data["planetary_positions"]
+    profile.dasha_details = divine_data["dasha_details"]
+
+    db.commit()
+    db.refresh(profile)
+
+    return profile

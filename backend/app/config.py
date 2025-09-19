@@ -1,19 +1,44 @@
 import os
 from dotenv import load_dotenv
 
+# Load from .env (if exists)
 load_dotenv()
 
-DATABASE_URL = os.getenv("DATABASE_URL")
+# -----------------------------
+# Database Config
+# -----------------------------
+POSTGRES_USER = os.getenv("POSTGRES_USER", "postgres")
+POSTGRES_PASSWORD = os.getenv("POSTGRES_PASSWORD", "postgres")
+POSTGRES_DB = os.getenv("POSTGRES_DB", "astrodb")
+POSTGRES_HOST = os.getenv("POSTGRES_HOST", "db")  # ✅ Docker service name
+POSTGRES_PORT = os.getenv("POSTGRES_PORT", "5432")
 
-VALUEFIRST_AUTH = os.getenv("VALUEFIRST_AUTH_TOKEN")
-VALUEFIRST_SENDER = os.getenv("VALUEFIRST_SENDER", "CONCNT")
+DATABASE_URL = (
+    f"postgresql+psycopg2://{POSTGRES_USER}:{POSTGRES_PASSWORD}@"
+    f"{POSTGRES_HOST}:{POSTGRES_PORT}/{POSTGRES_DB}"
+)
+
+# -----------------------------
+# Redis Config
+# -----------------------------
+REDIS_HOST = os.getenv("REDIS_HOST", "redis")  # ✅ Docker service name
+REDIS_PORT = int(os.getenv("REDIS_PORT", 6379))
+REDIS_DB = int(os.getenv("REDIS_DB", 0))
+REDIS_URL = f"redis://{REDIS_HOST}:{REDIS_PORT}/{REDIS_DB}"
+
+# -----------------------------
+# JWT Config
+# -----------------------------
+JWT_SECRET = os.getenv("JWT_SECRET", "supersecret")
+JWT_ALGORITHM = os.getenv("JWT_ALGORITHM", "HS256")
+ACCESS_TOKEN_EXPIRE_MINUTES = int(os.getenv("ACCESS_TOKEN_EXPIRE_MINUTES", "30"))
+REFRESH_TOKEN_EXPIRE_DAYS = int(os.getenv("REFRESH_TOKEN_EXPIRE_DAYS", "7"))
+
+# -----------------------------
+# External APIs
+# -----------------------------
+DIVINE_API_KEY = os.getenv("DIVINE_API_KEY", "")
+DIVINE_AUTH_TOKEN = os.getenv("DIVINE_AUTH_TOKEN", "")
+GOOGLE_MAPS_API_KEY = os.getenv("GOOGLE_MAPS_API_KEY", "")
+
 TWOFACTOR_API_KEY = os.getenv("TWOFACTOR_API_KEY")
-
-JWT_SECRET = os.getenv("JWT_SECRET_KEY", "supersecretkey")
-JWT_ALGORITHM = "HS256"
-ACCESS_TOKEN_EXPIRE_MINUTES = int(os.getenv("ACCESS_TOKEN_EXPIRE_MINUTES", "60"))
-REFRESH_TOKEN_EXPIRE_DAYS = int(os.getenv("REFRESH_TOKEN_EXPIRE_DAYS", "30"))
-GOOGLE_MAPS_API_KEY = os.getenv("GOOGLE_MAPS_API_KEY")
-
-DIVINE_API_KEY = "e19094a2dca050c96e919b1cd387daf8"
-DIVINE_AUTH_TOKEN = "eyJ0eXAiOiJKV1QiLCJhbGciOiJIUzI1NiJ9.eyJpc3MiOiJodHRwczovL2RpdmluZWFwaS5jb20vc2lnbnVwIiwiaWF0IjoxNzU3NzAwNDU2LCJuYmYiOjE3NTc3MDA0NTYsImp0aSI6IlNKYXByd2tEakpiMmVONkQiLCJzdWIiOiI0MjU1IiwicHJ2IjoiZTZlNjRiYjBiNjEyNmQ3M2M2Yjk3YWZjM2I0NjRkOTg1ZjQ2YzlkNyJ9.29enOtioW_1_i5nUYXBtt5-5sDaQeVoFulZTfCQf184"

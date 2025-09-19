@@ -1,5 +1,5 @@
 import httpx
-from app.config import VALUEFIRST_AUTH, VALUEFIRST_SENDER, TWOFACTOR_API_KEY
+from app.config import TWOFACTOR_API_KEY
 
 VALUEFIRST_URL = "https://http.myvfirst.com/smpp/sendsms"
 

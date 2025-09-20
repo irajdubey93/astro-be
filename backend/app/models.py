@@ -14,6 +14,7 @@ class User(Base):
     created_at = Column(DateTime, default=datetime.utcnow)
 
     profiles = relationship("Profile", back_populates="user")
+    chat_sessions = relationship("ChatSession", back_populates="user")
 
 
 class Profile(Base):
@@ -21,12 +22,12 @@ class Profile(Base):
 
     id = Column(String, primary_key=True, default=generate_oid, index=True)
     user_id = Column(String, ForeignKey("users.id"), nullable=False)
-    full_name = Column(String, nullable=True)   # Optional now
-    email = Column(String, nullable=True)       # ✅ Added optional email
-    gender = Column(String, nullable=True)      # Optional now
-    phone = Column(String, nullable=True)       # ✅ Store phone if needed
-    date_of_birth = Column(Date, nullable=True) # ✅ Changed to Date
-    birth_time = Column(Time, nullable=True)    # ✅ Matches schema
+    full_name = Column(String, nullable=True)
+    email = Column(String, nullable=True)
+    gender = Column(String, nullable=True)
+    phone = Column(String, nullable=True)
+    date_of_birth = Column(Date, nullable=True)
+    birth_time = Column(Time, nullable=True)
     birth_place_name = Column(String, nullable=True)
     birth_lat = Column(Float, nullable=True)
     birth_lon = Column(Float, nullable=True)
@@ -36,6 +37,7 @@ class Profile(Base):
     created_at = Column(DateTime, default=datetime.utcnow)
 
     user = relationship("User", back_populates="profiles")
+    chat_sessions = relationship("ChatSession", back_populates="profile")
 
 
 class OTP(Base):
@@ -57,3 +59,31 @@ class RefreshToken(Base):
     token = Column(String, nullable=False, unique=True)
     expires_at = Column(DateTime, nullable=False)
     created_at = Column(DateTime, default=datetime.utcnow)
+
+
+# --------------------------
+# 🗨️ Chat Models
+# --------------------------
+class ChatSession(Base):
+    __tablename__ = "chat_sessions"
+
+    id = Column(String, primary_key=True, default=generate_oid, index=True)
+    user_id = Column(String, ForeignKey("users.id"), nullable=False)
+    profile_id = Column(String, ForeignKey("profiles.id"), nullable=False)
+    created_at = Column(DateTime, default=datetime.utcnow)
+
+    user = relationship("User", back_populates="chat_sessions")
+    profile = relationship("Profile", back_populates="chat_sessions")
+    messages = relationship("ChatMessage", back_populates="session")
+
+
+class ChatMessage(Base):
+    __tablename__ = "chat_messages"
+
+    id = Column(String, primary_key=True, default=generate_oid, index=True)
+    session_id = Column(String, ForeignKey("chat_sessions.id"), nullable=False)
+    sender = Column(String, nullable=False)  # "user" or "agent"
+    message = Column(String, nullable=False)
+    created_at = Column(DateTime, default=datetime.utcnow)
+
+    session = relationship("ChatSession", back_populates="messages")

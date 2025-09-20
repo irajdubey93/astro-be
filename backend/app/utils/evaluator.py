@@ -1,5 +1,5 @@
 # app/evaluator.py
-from datetime import datetime
+from datetime import datetime, timedelta
 from dateutil import parser as date_parser
 import re
 from google import genai
@@ -7,29 +7,42 @@ from app.config import GEMINI_API_KEY
 
 client = genai.Client(api_key=GEMINI_API_KEY)
 
-
 # ------------------------
 # Input Guardrails
 # ------------------------
+BLOCKED_KEYWORDS = [
+    "suicide", "kill", "murder", "terrorism", "illegal",
+    "hack", "weapon", "drugs", "lottery", "diagnosis"
+]
+
+ALLOWED_AREAS = [
+    "career", "job", "promotion", "demotion", "startup",
+    "marriage", "relationship", "children", "pregnancy",
+    "family", "finance", "wealth", "income", "business",
+    "education", "future", "health", "success", "failure",
+    "spirituality", "remedies", "guidance", "fortune"
+]
+
+
 def keyword_block(query: str) -> bool:
-    blocked = [
-        "suicide", "kill", "murder", "terrorism", "illegal",
-        "medical diagnosis", "lottery", "hack", "weapon", "drugs"
-    ]
-    return any(word in query.lower() for word in blocked)
+    """Block if query contains unsafe keywords."""
+    return any(word in query.lower() for word in BLOCKED_KEYWORDS)
 
 
 async def evaluate_query(query: str) -> bool:
-    """Validate if query is astrology-safe."""
+    """
+    Validate if query is astrology-safe.
+    Blocks unsafe content, allows life/astrology queries.
+    """
     if keyword_block(query):
         return False
 
     system_prompt = """
     You are a safety evaluator for an AI astrologer chatbot.
     Rules:
-    - If about suicide, self-harm, terrorism, or illegal activity → UNSAFE.
+    - If about suicide, self-harm, terrorism, illegal activity, hacking, or drugs → UNSAFE.
     - If asking for medical diagnosis or lottery prediction → UNSAFE.
-    - If general life/astrology related → SAFE.
+    - If related to career, marriage, children, relationships, finance, family, spirituality, remedies, or astrology → SAFE.
     Respond only with SAFE or UNSAFE.
     """
 
@@ -50,7 +63,7 @@ async def evaluate_output(answer: str) -> bool:
     You are an evaluator. Judge if the following response is a valid astrology-based answer.
 
     Rules:
-    - Must reference planets (Grahas), Rashis, Bhavas, or Dasha/Antardasha periods.
+    - Must reference Grahas (planets), Rashis (signs), Bhavas (houses), or Dasha/Antardasha periods.
     - Cannot be generic like "Good times ahead".
     - Must be rooted in astrology logic, not vague advice.
 
@@ -80,15 +93,15 @@ async def extract_reference_date(query: str) -> str | None:
     """
     today = datetime.utcnow()
 
-    # Check for explicit date
+    # Try explicit date
     try:
         parsed = date_parser.parse(query, fuzzy=True, default=today)
-        if parsed.year != today.year or parsed.month != today.month or parsed.day != today.day:
+        if parsed.date() != today.date():
             return parsed.strftime("%Y-%m-%d")
     except Exception:
         pass
 
-    # Relative periods: "next 2 weeks", "next 3 months"
+    # Relative expressions
     rel_match = re.search(r"next (\d+) (day|week|month|year)s?", query.lower())
     if rel_match:
         num = int(rel_match.group(1))

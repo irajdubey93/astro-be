@@ -1,7 +1,6 @@
 # app/services/chat_agent.py
 import json
 from datetime import datetime
-from dateutil import parser as date_parser
 from sqlalchemy.orm import Session
 from app.models import ChatSession, ChatMessage, Profile
 from app.redis_client import get_redis
@@ -11,7 +10,6 @@ from app.config import GEMINI_API_KEY
 
 client = genai.Client(api_key=GEMINI_API_KEY)
 
-
 # ------------------------
 # System Prompts
 # ------------------------
@@ -20,11 +18,14 @@ You are a highly knowledgeable and empathetic Indian Vedic astrologer.
 
 Rules:
 - STRICTLY use planetary positions and Dasha/Antardasha from profile data.
-- If the user specifies a timeframe (e.g. "next 2 weeks" or "January 2026"), use that as the reference date.
+- If user specifies timeframe (e.g. "next 2 weeks" or "January 2026"), use that as reference date.
 - If no date is specified, default to TODAY: {reference_date}.
 - Do NOT invent dates. Use saved dasha periods to explain timing.
-- Always explain logic with Grahas (planets), Rashis (signs), Bhavas (houses), and Dashas.
-- Use empathetic, spiritual, and guiding tone.
+- Must explain using Grahas (planets), Rashis (signs), Bhavas (houses), and Dashas.
+- Adjust tone to user emotion:
+  - If query sounds worried, answer with reassurance + remedies.
+  - If query is happy, bless them warmly.
+  - If query is neutral, respond factually but kindly.
 - End with a concise summary (≤3 lines).
 """
 
@@ -34,7 +35,6 @@ Answer ONLY with Graha, Bhava, and Dasha/Antardasha logic from provided data.
 Base analysis on reference date: {reference_date}.
 Do not provide vague, generic advice.
 """
-
 
 # ------------------------
 # Main Response Generator
@@ -47,20 +47,20 @@ async def generate_response(db: Session, session: ChatSession, profile: Profile,
     if not safe:
         return "🚫 Sorry, I cannot answer this type of query."
 
-    # ✅ Step 2: Chat history
+    # ✅ Step 2: Conversation History
     messages_key = f"chat:messages:{session.id}"
     chat_history = await redis_conn.lrange(messages_key, 0, -1)
     chat_history = [json.loads(msg) for msg in chat_history]
     chat_history_text = "\n".join([f"{m['role']}: {m['content']}" for m in chat_history])
 
-    # ✅ Step 3: Determine reference date
+    # ✅ Step 3: Reference Date
     extracted_date = await extract_reference_date(query)
     if extracted_date:
         reference_date = extracted_date
     else:
         reference_date = datetime.utcnow().strftime("%Y-%m-%d")
 
-    # ✅ Step 4: Build astrology context
+    # ✅ Step 4: Astrology Context
     profile_context = f"""
     Name: {profile.full_name}
     DOB: {profile.date_of_birth}, Time: {profile.birth_time}
@@ -90,7 +90,7 @@ async def generate_response(db: Session, session: ChatSession, profile: Profile,
 {query}
 """
 
-    # ✅ Step 5: Primary response attempt
+    # ✅ Step 5: Primary Attempt
     response = client.models.generate_content(
         model="gemini-2.5-flash",
         contents=[{"role": "user", "parts": [{"text": build_prompt(SYSTEM_PROMPT)}]}],
@@ -100,8 +100,8 @@ async def generate_response(db: Session, session: ChatSession, profile: Profile,
     # ✅ Step 6: Output Guardrail
     valid = await evaluate_output(answer)
 
-    # Retry with fallback if unsafe/invalid
     if not valid:
+        # Retry with fallback
         response = client.models.generate_content(
             model="gemini-2.5-flash",
             contents=[{"role": "user", "parts": [{"text": build_prompt(FALLBACK_PROMPT)}]}],
@@ -109,22 +109,23 @@ async def generate_response(db: Session, session: ChatSession, profile: Profile,
         answer = response.candidates[0].content.parts[0].text.strip()
         valid = await evaluate_output(answer)
 
-    # Final fallback
     if not valid:
+        # Final fallback
         answer = (
             f"🙏 Based on your planetary positions and Dasha periods as of {reference_date}, "
-            "the influences are mixed. Focus on patience, discipline, and spiritual balance. "
-            "Would you like me to analyze your Antardasha in detail for this period?"
+            "the influences are mixed. I suggest patience, discipline, and spiritual remedies. "
+            "Would you like me to analyze your Antardasha in more detail for this period?"
         )
 
-    # ✅ Step 7: Save conversation (DB + Redis)
+    # ✅ Step 7: Save to DB
     user_msg = ChatMessage(session_id=session.id, sender="user", message=query)
     agent_msg = ChatMessage(session_id=session.id, sender="agent", message=answer)
     db.add_all([user_msg, agent_msg])
     db.commit()
 
+    # ✅ Step 8: Save to Redis
     await redis_conn.rpush(messages_key, json.dumps({"role": "user", "content": query}))
     await redis_conn.rpush(messages_key, json.dumps({"role": "agent", "content": answer}))
-    await redis_conn.expire(messages_key, 60 * 60 * 24 * 7)  # 7 days expiry
+    await redis_conn.expire(messages_key, 60 * 60 * 24 * 30)  # 30 days expiry
 
     return answer

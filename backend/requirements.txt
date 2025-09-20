@@ -9,3 +9,4 @@ passlib[bcrypt]
 email-validator
 pymongo
 redis[hiredis]
+google-genai>=0.2.0

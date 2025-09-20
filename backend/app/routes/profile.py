@@ -131,6 +131,59 @@ def list_profiles(
     return [serialize_profile(p) for p in profiles]
 
 
+
+# ---------------------
+# Google Maps Helpers
+# ---------------------
+
+@router.get("/profiles/search-location")
+async def search_location(query: str, current_user: User = Depends(get_current_user)):
+    url = "https://maps.googleapis.com/maps/api/place/autocomplete/json"
+    params = {"input": query, "key": GOOGLE_MAPS_API_KEY}
+    async with httpx.AsyncClient() as client:
+        r = await client.get(url, params=params)
+        return r.json()
+
+
+@router.get("/profiles/select-location")
+async def select_location(
+    place_id: str, current_user: User = Depends(get_current_user)
+):
+    geo_url = "https://maps.googleapis.com/maps/api/geocode/json"
+    async with httpx.AsyncClient() as client:
+        geo = await client.get(
+            geo_url, params={"place_id": place_id, "key": GOOGLE_MAPS_API_KEY}
+        )
+        geo_data = geo.json()
+        if not geo_data["results"]:
+            raise HTTPException(status_code=400, detail="Invalid place_id")
+
+        location = geo_data["results"][0]["geometry"]["location"]
+        name = geo_data["results"][0]["formatted_address"]
+
+        lat = location["lat"]
+        lon = location["lng"]
+
+        tz_url = "https://maps.googleapis.com/maps/api/timezone/json"
+        tz = await client.get(
+            tz_url,
+            params={
+                "location": f"{lat},{lon}",
+                "timestamp": int(datetime.utcnow().timestamp()),
+                "key": GOOGLE_MAPS_API_KEY,
+            },
+        )
+        tz_data = tz.json()
+
+        return {
+            "place_name": name,
+            "lat": lat,
+            "lon": lon,
+            "timezone": tz_data.get("rawOffset", 0) / 3600,
+        }
+
+
+
 @router.get("/profiles/{profile_id}", response_model=ProfileResponse)
 def get_profile(
     profile_id: str,
@@ -190,58 +243,6 @@ def delete_profile(
     db.delete(profile)
     db.commit()
     return {"status": "deleted"}
-
-
-# ---------------------
-# Google Maps Helpers
-# ---------------------
-
-@router.get("/profiles/search-location")
-async def search_location(query: str, current_user: User = Depends(get_current_user)):
-    url = "https://maps.googleapis.com/maps/api/place/autocomplete/json"
-    params = {"input": query, "key": GOOGLE_MAPS_API_KEY}
-    async with httpx.AsyncClient() as client:
-        r = await client.get(url, params=params)
-        return r.json()
-
-
-@router.get("/profiles/select-location")
-async def select_location(
-    place_id: str, current_user: User = Depends(get_current_user)
-):
-    geo_url = "https://maps.googleapis.com/maps/api/geocode/json"
-    async with httpx.AsyncClient() as client:
-        geo = await client.get(
-            geo_url, params={"place_id": place_id, "key": GOOGLE_MAPS_API_KEY}
-        )
-        geo_data = geo.json()
-        if not geo_data["results"]:
-            raise HTTPException(status_code=400, detail="Invalid place_id")
-
-        location = geo_data["results"][0]["geometry"]["location"]
-        name = geo_data["results"][0]["formatted_address"]
-
-        lat = location["lat"]
-        lon = location["lng"]
-
-        tz_url = "https://maps.googleapis.com/maps/api/timezone/json"
-        tz = await client.get(
-            tz_url,
-            params={
-                "location": f"{lat},{lon}",
-                "timestamp": int(datetime.utcnow().timestamp()),
-                "key": GOOGLE_MAPS_API_KEY,
-            },
-        )
-        tz_data = tz.json()
-
-        return {
-            "place_name": name,
-            "lat": lat,
-            "lon": lon,
-            "timezone": tz_data.get("rawOffset", 0) / 3600,
-        }
-
 
 # ---------------------
 # Refresh Divine Data Manually

@@ -30,7 +30,7 @@ async def fetch_divine_data(profile):
         "hour": profile.birth_time.hour if profile.birth_time else 0,
         "min": profile.birth_time.minute if profile.birth_time else 0,
         "sec": 0,
-        "gender": profile.gender,
+        "gender": (profile.gender or "").lower(),
         "place": profile.birth_place_name,
         "lat": profile.birth_lat,
         "lon": profile.birth_lon,

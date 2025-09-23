@@ -11,3 +11,4 @@ pymongo
 redis[hiredis]
 google-genai>=0.2.0
 python-dateutil
+phonenumbers==8.13.43

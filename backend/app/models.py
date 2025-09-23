@@ -24,7 +24,7 @@ class Profile(Base):
     full_name = Column(String, nullable=True)
     email = Column(String, nullable=True)
     gender = Column(String, nullable=True)
-    phone = Column(String, nullable=True)
+    phone = Column(String, unique=True, index=True, nullable=False)
     date_of_birth = Column(Date, nullable=True)
     birth_time = Column(Time, nullable=True)
     birth_place_name = Column(String, nullable=True)

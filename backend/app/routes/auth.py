@@ -10,13 +10,12 @@ from app.utils.jwt_handler import create_access_token, create_refresh_token
 from app.utils.otp_handler import generate_otp, expiry_time
 from app.utils.otp_service import deliver_otp
 from app.redis_client import get_redis
+from app.utils.helper import normalize_phone
+
 
 router = APIRouter()
 
 
-# ---------------------
-# Schemas
-# ---------------------
 class SendOTPRequest(BaseModel):
     phone: str
 
@@ -30,30 +29,32 @@ class RefreshRequest(BaseModel):
     refresh_token: str
 
 
-# ---------------------
-# Send OTP
-# ---------------------
 @router.post("/send-otp")
 async def send_otp(request: Request, data: SendOTPRequest, db: Session = Depends(get_db)):
     redis = get_redis()
     ip_address = request.client.host
-    phone = data.phone
 
-    # Redis key for rate limiting (10 OTPs per 10 minutes per IP)
-    key = f"otp_rate:{ip_address}"
-    count = await redis.get(key)
-    if count and int(count) >= 10:
-        raise HTTPException(status_code=429, detail="Too many OTP requests. Try again later.")
+    try:
+        phone_e164 = normalize_phone(data.phone)  # <- normalize
+    except Exception:
+        raise HTTPException(status_code=400, detail="Invalid phone")
 
-    # Increment + set expiry in Redis
-    await redis.incr(key)
-    await redis.expire(key, 600)  # 10 minutes
+    # Rate limit by IP and phone
+    ip_key = f"otp_rate_ip:{ip_address}"
+    ph_key = f"otp_rate_ph:{phone_e164}"
+
+    for key, limit in ((ip_key, 10), (ph_key, 5)):
+        count = await redis.get(key)
+        if count and int(count) >= limit:
+            raise HTTPException(status_code=429, detail="Too many OTP requests. Try again later.")
+        await redis.incr(key)
+        await redis.expire(key, 600)
 
     otp_code = generate_otp()
-
-    # Save OTP in DB (for audit & debugging)
+    print(f"Generated OTP for {phone_e164}: {otp_code}")
+    # Persist OTP (consider hashing in prod)
     otp_entry = OTP(
-        phone=phone,
+        phone=phone_e164,
         code=otp_code,
         ip_address=ip_address,
         expires_at=expiry_time(),
@@ -61,45 +62,43 @@ async def send_otp(request: Request, data: SendOTPRequest, db: Session = Depends
     db.add(otp_entry)
     db.commit()
 
-    # Deliver OTP
     try:
-        await deliver_otp(phone, otp_code)
+        # await deliver_otp(phone_e164, otp_code)
         return {"status": True}
     except Exception as e:
         raise HTTPException(status_code=400, detail=f"OTP delivery failed: {str(e)}")
 
 
-# ---------------------
-# Verify OTP
-# ---------------------
 @router.post("/verify-otp")
 def verify_otp(data: VerifyOTPRequest, db: Session = Depends(get_db)):
+    try:
+        phone_e164 = normalize_phone(data.phone)
+    except Exception:
+        raise HTTPException(status_code=400, detail="Invalid phone")
+
     otp_entry = (
         db.query(OTP)
-        .filter(OTP.phone == data.phone, OTP.code == data.code)
+        .filter(OTP.phone == phone_e164, OTP.code == data.code)
         .order_by(OTP.created_at.desc())
         .first()
     )
-
     if not otp_entry:
         raise HTTPException(status_code=400, detail="Invalid OTP")
-
     if datetime.utcnow() > otp_entry.expires_at:
         raise HTTPException(status_code=400, detail="OTP expired")
 
-    # Get or create user
-    user = db.query(User).filter(User.phone == data.phone).first()
+    # Get-or-create single canonical user for this phone
+    user = db.query(User).filter(User.phone == phone_e164).first()
     if not user:
-        user = User(phone=data.phone, email=f"{data.phone}@temp.local")
+        user = User(phone=phone_e164, email=f"{phone_e164}@temp.local")
         db.add(user)
         db.commit()
         db.refresh(user)
 
-    # Generate JWTs
+    # JWTs
     access_token = create_access_token({"sub": str(user.id)})
     refresh_token_str, refresh_expiry = create_refresh_token({"sub": str(user.id)})
 
-    # Save refresh token (hashed) in DB
     db.add(
         RefreshToken(
             user_id=user.id,
@@ -109,12 +108,12 @@ def verify_otp(data: VerifyOTPRequest, db: Session = Depends(get_db)):
     )
     db.commit()
 
-    return {"access_token": access_token, "refresh_token": refresh_token_str}
+    return {
+        "access_token": access_token,
+        "refresh_token": refresh_token_str,
+        "user": {"id": str(user.id), "phone": user.phone}
+    }
 
-
-# ---------------------
-# Refresh Access Token
-# ---------------------
 @router.post("/refresh")
 def refresh_token(data: RefreshRequest, db: Session = Depends(get_db)):
     token_hash = hashlib.sha256(data.refresh_token.encode()).hexdigest()
@@ -127,9 +126,6 @@ def refresh_token(data: RefreshRequest, db: Session = Depends(get_db)):
     return {"access_token": access_token}
 
 
-# ---------------------
-# Logout
-# ---------------------
 @router.post("/logout")
 def logout(data: RefreshRequest, db: Session = Depends(get_db)):
     token_hash = hashlib.sha256(data.refresh_token.encode()).hexdigest()

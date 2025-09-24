@@ -23,7 +23,7 @@ services:
       - "6379:6379"
 
   backend:
-    build: ./backend
+    build: ./kavi-ai-be
     restart: always
     env_file: .env
     ports:
